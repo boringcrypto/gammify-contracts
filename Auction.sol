@@ -406,7 +406,7 @@ contract GammifyAuction is Ownable {
         auctions[token][id]._highestBid = value;
 
         if (auctions[token][id]._buyitNow > 0) {
-            if (value > auctions[token][id]._buyitNow) {
+            if (value >= auctions[token][id]._buyitNow) {
                _closeAuction(token, id);
             }
         }
