@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity 0.8.0;
+pragma solidity ^0.8.0;
 
 interface IERC165 {
         /**
@@ -215,10 +215,7 @@ abstract contract Ownable is Context {
     }
 }
 
-
 contract GammifyAuction is Ownable {
-
-    using SafeMath for uint;
 
     event NewAuctionCreated(
         address seller,
@@ -261,13 +258,24 @@ contract GammifyAuction is Ownable {
         uint _highestBid;
         uint _buyitNow;
         bool _open; //prevent malicious auction resets
+        uint auctionId;
     }
 
-    mapping (address => mapping (uint256 => Auction)) public auctions;
+    struct ActiveAuctions {
+        address token;
+        uint id;
+    }
 
-    mapping (address => mapping (uint256 => uint256)) public bidCreation;
+    ActiveAuctions[] internal activeAuctions;
+    mapping (address => ActiveAuctions[]) internal userAuctions; //make getter
+    uint internal closedAuctions;
+
+    mapping (address => mapping (uint256 => Auction)) public auctions;
+    mapping (address => mapping (uint256 => uint256)) internal bidCreation;
     mapping (address => mapping (uint256 => uint256)) public timetoBidExpiry;
     mapping (address => uint) public withdrawls;
+
+    uint internal counter = 0;
 
     modifier onlySeller(address token, uint id) {
         require(
@@ -300,15 +308,24 @@ contract GammifyAuction is Ownable {
             startPrice,
             uint(0),
             buyNow,
-            true
+            true,
+            counter
         );
         
         if (buyNow > 0) {
             _escrow(seller, token, id);
         }
 
+        ActiveAuctions memory newActiveAuction = ActiveAuctions(
+            token,
+            id
+        );
+
+        activeAuctions.push(newActiveAuction);
+        userAuctions[msg.sender].push(newActiveAuction);
         _createAuction(newAuction, token, id);
         emit NewAuctionCreated(msg.sender, token, startPrice, id, buyNow);
+        counter += 1;
     }
 
 
@@ -316,6 +333,7 @@ contract GammifyAuction is Ownable {
         public payable {
             
         require(msg.value > 0, "Cannot bid 0 ether");
+        require(msg.value > auctions[token][id]._startPrice, "Below Start Price");
 
         _bid(
             msg.value, 
@@ -332,6 +350,38 @@ contract GammifyAuction is Ownable {
             msg.value,
             expiry
         );
+
+    }
+
+    function getAuctions() public 
+        view
+        returns (ActiveAuctions[] memory) {
+
+            uint res;
+
+            ActiveAuctions[] memory aucs = new ActiveAuctions[](activeAuctions.length - closedAuctions);
+
+            for (uint i = 0; i < activeAuctions.length; i++) {
+                if (activeAuctions[i].token != address(0)) {
+                    aucs[res] = activeAuctions[i];
+                    res += 1;
+                }
+            }
+
+            return aucs;
+    }
+
+    function getUserAuctions(address user) public 
+        view 
+        returns (ActiveAuctions[] memory) {
+
+            ActiveAuctions[] memory aucs = new ActiveAuctions[](userAuctions[user].length);
+
+            for (uint i = 0; i < userAuctions[user].length; i++) {
+               aucs[i] = userAuctions[user][i];
+            }
+
+        return aucs;
 
     }
 
@@ -394,7 +444,7 @@ contract GammifyAuction is Ownable {
 
     function _bid(uint value, address bidder, address token, uint id, uint expiry) internal {
 
-        if (value < auctions[token][id]._highestBid) {
+        if (value <= auctions[token][id]._highestBid) {
                 revert("Underbid");
         }
 
@@ -425,6 +475,8 @@ contract GammifyAuction is Ownable {
             _transfer(token, auctions[token][id]._seller, id);
         }
 
+        closedAuctions += 1;
+        delete activeAuctions[auctions[token][id].auctionId];
         delete auctions[token][id];
     }
 
@@ -438,6 +490,7 @@ contract GammifyAuction is Ownable {
         address bidder = auctions[token][id]._highestBidder;
 
         _transfer(token, bidder, id);
+        // setup treasury fees
         withdrawls[auctions[token][id]._seller] = auctions[token][id]._highestBid;
 
         emit AuctionSuccess(
@@ -448,6 +501,8 @@ contract GammifyAuction is Ownable {
             auctions[token][id]._highestBid
         );
 
+        closedAuctions += 1;
+        delete activeAuctions[auctions[token][id].auctionId];
         delete auctions[token][id];
 
     }
