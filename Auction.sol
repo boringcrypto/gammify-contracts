@@ -266,7 +266,7 @@ contract GammifyAuction is Ownable {
         uint id;
     }
 
-    ActiveAuctions[] internal activeAuctions;
+    ActiveAuctions[] public activeAuctions;
     mapping (address => ActiveAuctions[]) internal userAuctions; //make getter
     uint internal closedAuctions;
 
