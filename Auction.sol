@@ -266,7 +266,7 @@ contract GammifyAuction is Ownable {
         uint id;
     }
 
-    ActiveAuctions[] internal activeAuctions;
+    ActiveAuctions[] public activeAuctions;
     mapping (address => ActiveAuctions[]) internal userAuctions; //make getter
     uint internal closedAuctions;
 
@@ -451,7 +451,7 @@ contract GammifyAuction is Ownable {
         bidCreation[token][id] = block.timestamp;
         timetoBidExpiry[token][id] = expiry;
 
-        withdrawls[auctions[token][id]._highestBidder] = auctions[token][id]._highestBid;
+        withdrawls[auctions[token][id]._highestBidder] += auctions[token][id]._highestBid;
         auctions[token][id]._highestBidder = bidder;
         auctions[token][id]._highestBid = value;
 
@@ -469,7 +469,7 @@ contract GammifyAuction is Ownable {
 
 
     function _cancelAuction(address token, uint id) internal {
-        withdrawls[auctions[token][id]._highestBidder] = auctions[token][id]._highestBid;
+        withdrawls[auctions[token][id]._highestBidder] += auctions[token][id]._highestBid;
 
         if (auctions[token][id]._buyitNow > 0) {
             _transfer(token, auctions[token][id]._seller, id);
@@ -491,7 +491,7 @@ contract GammifyAuction is Ownable {
 
         _transfer(token, bidder, id);
         // setup treasury fees
-        withdrawls[auctions[token][id]._seller] = auctions[token][id]._highestBid;
+        withdrawls[auctions[token][id]._seller] += auctions[token][id]._highestBid;
 
         emit AuctionSuccess(
             token,
@@ -527,7 +527,7 @@ contract GammifyAuction is Ownable {
                 auctions[token][id]._highestBidder = auctions[token][id]._seller;
                 auctions[token][id]._highestBid = 0;
 
-                withdrawls[bidder] = bidAmount;
+                withdrawls[bidder] += bidAmount;
                 return true;
             } else {
                 return false;
