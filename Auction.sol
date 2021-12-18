@@ -267,7 +267,7 @@ contract GammifyAuction is Ownable {
     }
 
     ActiveAuctions[] public activeAuctions;
-    mapping (address => ActiveAuctions[]) internal userAuctions; //make getter
+    mapping (address => ActiveAuctions[]) public userAuctions;
     uint internal closedAuctions;
 
     mapping (address => mapping (uint256 => Auction)) public auctions;
