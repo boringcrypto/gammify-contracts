@@ -292,7 +292,7 @@ contract GammifyAuction is Ownable {
     }
 
 
-    function createAuciton(address token, uint id, uint startPrice, uint buyNow) 
+    function createAuction(address token, uint id, uint startPrice, uint buyNow) 
         public {
 
         address seller = msg.sender;
