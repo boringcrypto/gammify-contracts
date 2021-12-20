@@ -399,7 +399,8 @@ contract GammifyAuction is Ownable {
             if (success) {
                 _closeAuction(token, id);
             }
-            
+        } else {
+            _closeAuction(token, id);
         }
     }
 
