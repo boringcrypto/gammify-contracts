@@ -395,13 +395,10 @@ contract GammifyAuction is Ownable {
     function acceptBid(address token, uint id) public onlySeller(token, id) {
 
         if (auctions[token][id]._buyitNow == 0) {
-            (bool success) = _escrow(msg.sender, token, id);
-            if (success) {
-                _closeAuction(token, id);
-            }
-        } else {
-            _closeAuction(token, id);
+            _escrow(msg.sender, token, id);
         }
+        _closeAuction(token, id);
+        
     }
 
     function withdrawl() public returns (bool) {
