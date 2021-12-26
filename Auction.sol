@@ -218,7 +218,7 @@ abstract contract Ownable is Context {
 contract GammifyAuction is Ownable {
 
     event NewAuctionCreated(
-        address seller,
+        address indexed seller,
         address tokenContract,
         uint startPrice,
         uint tokenId,
@@ -241,7 +241,7 @@ contract GammifyAuction is Ownable {
 
     event newBid(
         address token,
-        address bidder,
+        address indexed bidder,
         uint tokenId,
         uint amountEther,
         uint timetoExpiry
