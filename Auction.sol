@@ -413,7 +413,7 @@ contract GammifyAuction is Ownable {
         external onlySeller(token, id) {
 
             /*Prevents Front Running attack*/
-            require(winner == auctions[token][id].highestBidder, "Sorry Pal");
+            require(winner == auctions[token][id].highestBidder, "Preventing FrontRun");
             emit AuctionSuccess(token, auctions[token][id].seller, winner, id, auctions[token][id].highestBid);
             _closeAuction(token, id);
     }
