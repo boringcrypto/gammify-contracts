@@ -215,8 +215,19 @@ abstract contract Ownable is Context {
     }
 }
 
+/**
+
+Gammify Auction Contract:
+Bids : Time Expiry / Only Withdrawable if Time is out on bid or auction is cancelled
+Auctions: No Timeout / optional escrow for a "buy it now" sale
+
+Small Fee goes to treasuy (not set yet)
+Optimized To prevent front running
+*/
+
 contract GammifyAuction is Ownable {
 
+    /*****************EVENTS********************/
     event NewAuctionCreated(
         address seller,
         address tokenContract,
@@ -239,7 +250,7 @@ contract GammifyAuction is Ownable {
         uint price
     );
 
-    event newBid(
+    event NewBid(
         address token,
         address bidder,
         uint tokenId,
@@ -247,17 +258,17 @@ contract GammifyAuction is Ownable {
         uint timetoExpiry
     );
 
-    /********************Data**********************/
+    /********************DATA STRUCTS**********************/
 
     struct Auction {
-        address _seller;
-        address _tokenContract;
-        address _highestBidder;
-        uint _tokenId;
-        uint _startPrice;
-        uint _highestBid;
-        uint _buyitNow;
-        bool _open; //prevent malicious auction resets
+        address seller;
+        address tokenContract;
+        address highestBidder;
+        uint tokenId;
+        uint startPrice;
+        uint highestBid;
+        uint buyItNow;
+        bool open; //prevent malicious auction resets
         uint auctionId;
     }
 
@@ -265,6 +276,8 @@ contract GammifyAuction is Ownable {
         address token;
         uint id;
     }
+
+    /*****************STATE VARIABLES*********************/
 
     ActiveAuctions[] public activeAuctions;
     mapping (address => ActiveAuctions[]) public userAuctions;
@@ -277,28 +290,29 @@ contract GammifyAuction is Ownable {
 
     uint internal counter = 0;
 
+
+    /****************MODIFIERS*********************/
     modifier onlySeller(address token, uint id) {
         require(
-            auctions[token][id]._seller == msg.sender
+            auctions[token][id].seller == msg.sender
         );
         _;
     }
 
     modifier onlyBidder(address token, uint id) {
         require(
-            auctions[token][id]._highestBidder == msg.sender
+            auctions[token][id].highestBidder == msg.sender
         );
         _;
     }
 
-
+    /*******************EXTERNAL FUNCTIONS***************/
     function createAuction(address token, uint id, uint startPrice, uint buyNow) 
         public {
 
         address seller = msg.sender;
         require(_owns(token, id, seller), "Non-valid Owner");
-        require(!auctions[token][id]._open, "Auction already opened");
-        require(buyNow >= 0, "buynow must not be negative");
+        require(!auctions[token][id].open, "Auction already opened");
 
         Auction memory newAuction = Auction(
             seller,
@@ -311,10 +325,6 @@ contract GammifyAuction is Ownable {
             true,
             counter
         );
-        
-        if (buyNow > 0) {
-            _escrow(seller, token, id);
-        }
 
         ActiveAuctions memory newActiveAuction = ActiveAuctions(
             token,
@@ -323,17 +333,30 @@ contract GammifyAuction is Ownable {
 
         activeAuctions.push(newActiveAuction);
         userAuctions[msg.sender].push(newActiveAuction);
+
         _createAuction(newAuction, token, id);
         emit NewAuctionCreated(msg.sender, token, startPrice, id, buyNow);
         counter += 1;
+
+        /*requires approval to transfer or else transaction fails*/
+        if (buyNow > 0) {
+            _escrow(seller, token, id);
+        }
     }
 
-
     function bid(address token, uint id, uint expiry) 
-        public payable {
+        external payable {
             
         require(msg.value > 0, "Cannot bid 0 ether");
-        require(msg.value > auctions[token][id]._startPrice, "Below Start Price");
+        require(msg.value > auctions[token][id].startPrice, "Below Start Price");
+
+        emit NewBid(
+            token,
+            msg.sender,
+            id,
+            msg.value,
+            expiry
+        );
 
         _bid(
             msg.value, 
@@ -342,22 +365,14 @@ contract GammifyAuction is Ownable {
             id, 
             expiry //seconds
         );
-
-        emit newBid(
-            token,
-            msg.sender,
-            id,
-            msg.value,
-            expiry
-        );
-
     }
 
-    function getAuctions() public 
-        view
+    function getAuctions() 
+        external view
         returns (ActiveAuctions[] memory) {
 
-            uint res;
+            /*Deleted array elements leave "holes" in array, res keeps track of our index in aucs*/
+            uint res = 0;
 
             ActiveAuctions[] memory aucs = new ActiveAuctions[](activeAuctions.length - closedAuctions);
 
@@ -371,8 +386,8 @@ contract GammifyAuction is Ownable {
             return aucs;
     }
 
-    function getUserAuctions(address user) public 
-        view 
+    function getUserAuctions(address user) 
+        external view 
         returns (ActiveAuctions[] memory) {
 
             ActiveAuctions[] memory aucs = new ActiveAuctions[](userAuctions[user].length);
@@ -381,24 +396,26 @@ contract GammifyAuction is Ownable {
                aucs[i] = userAuctions[user][i];
             }
 
-        return aucs;
+            return aucs;
 
     }
 
 
-    function cancelAuction(address token, uint id) public onlySeller(token, id) {
-        _cancelAuction(token, id);
-        emit CancelledAuction(msg.sender, token, id);
+    function cancelAuction(address token, uint id) 
+        external onlySeller(token, id) {
+            emit CancelledAuction(msg.sender, token, id);
+            _cancelAuction(token, id);
+
     }
 
 
-    function acceptBid(address token, uint id) public onlySeller(token, id) {
+    function acceptBid(address token, uint id, address winner) 
+        external onlySeller(token, id) {
 
-        if (auctions[token][id]._buyitNow == 0) {
-            _escrow(msg.sender, token, id);
-        }
-        _closeAuction(token, id);
-        
+            /*Prevents Front Running attack*/
+            require(winner == auctions[token][id].highestBidder, "Sorry Pal");
+            emit AuctionSuccess(token, auctions[token][id].seller, winner, id, auctions[token][id].highestBid);
+            _closeAuction(token, id);
     }
 
     function withdrawl() public returns (bool) {
@@ -413,24 +430,24 @@ contract GammifyAuction is Ownable {
     }
 
     function closeBidandWithdrawl(address token, uint id) 
-        public
+        external
         onlyBidder(token, id) {
 
-            _expired(token, id);
+            require(_expired(token, id), "token not expired");
             withdrawl();
 
     }
 
-    //extend bid
 
-
-
-    /************INTERNAL*****************/
+    /************************INTERNAL*****************************/
     
-    function _escrow(address from, address token, uint id) internal returns (bool) {
-        IERC721 nft = IERC721(token);
-        nft.safeTransferFrom(from, address(this), id);
-        return true;
+    function _escrow(address from, address token, uint id) 
+        internal returns (bool) {
+
+            IERC721 nft = IERC721(token);
+            nft.safeTransferFrom(from, address(this), id);
+            return true;
+
     }
 
 
@@ -442,19 +459,19 @@ contract GammifyAuction is Ownable {
 
     function _bid(uint value, address bidder, address token, uint id, uint expiry) internal {
 
-        if (value <= auctions[token][id]._highestBid) {
+        if (value <= auctions[token][id].highestBid) {
                 revert("Underbid");
         }
 
         bidCreation[token][id] = block.timestamp;
         timetoBidExpiry[token][id] = expiry;
 
-        withdrawls[auctions[token][id]._highestBidder] += auctions[token][id]._highestBid;
-        auctions[token][id]._highestBidder = bidder;
-        auctions[token][id]._highestBid = value;
+        withdrawls[auctions[token][id].highestBidder] += auctions[token][id].highestBid;
+        auctions[token][id].highestBidder = bidder;
+        auctions[token][id].highestBid = value;
 
-        if (auctions[token][id]._buyitNow > 0) {
-            if (value >= auctions[token][id]._buyitNow) {
+        if (auctions[token][id].buyItNow > 0) {
+            if (value >= auctions[token][id].buyItNow) {
                _closeAuction(token, id);
             }
         }
@@ -467,15 +484,18 @@ contract GammifyAuction is Ownable {
 
 
     function _cancelAuction(address token, uint id) internal {
-        withdrawls[auctions[token][id]._highestBidder] += auctions[token][id]._highestBid;
+        
+        withdrawls[auctions[token][id].highestBidder] += auctions[token][id].highestBid;
+        address seller = auctions[token][id].seller;
 
-        if (auctions[token][id]._buyitNow > 0) {
-            _transfer(token, auctions[token][id]._seller, id);
-        }
 
         closedAuctions += 1;
         delete activeAuctions[auctions[token][id].auctionId];
         delete auctions[token][id];
+
+        if (auctions[token][id].buyItNow > 0) {
+            _transfer(token, seller, id);
+        }
     }
 
 
@@ -485,30 +505,37 @@ contract GammifyAuction is Ownable {
             revert("Bid Expired!");
         }
 
-        address bidder = auctions[token][id]._highestBidder;
-
-        _transfer(token, bidder, id);
-        // setup treasury fees
-        withdrawls[auctions[token][id]._seller] += auctions[token][id]._highestBid;
+        address bidder = auctions[token][id].highestBidder;
+        uint buyNow = auctions[token][id].buyItNow;
+        withdrawls[auctions[token][id].seller] += auctions[token][id].highestBid;
 
         emit AuctionSuccess(
             token,
             msg.sender,
-            auctions[token][id]._highestBidder,
+            auctions[token][id].highestBidder,
             id,
-            auctions[token][id]._highestBid
+            auctions[token][id].highestBid
         );
 
         closedAuctions += 1;
         delete activeAuctions[auctions[token][id].auctionId];
         delete auctions[token][id];
 
+        if (buyNow == 0) {
+            _escrow(msg.sender, token, id);
+        }
+
+        _transfer(token, bidder, id);
+        // treasury fee logic here
+
     }
 
 
     function _owns(address token, uint id, address who) internal view returns (bool) {
+
         IERC721 nft = IERC721(token);
         return (nft.ownerOf(id) == who);
+
     }
 
     function _expired(address token, uint id) 
@@ -517,13 +544,15 @@ contract GammifyAuction is Ownable {
 
             uint bidAmount;
             address bidder;
+            
 
+            /*TimeStamp comparison is generally frowned upon however for this use case, a few seconds of manipulation should matter much, front running is also prevented already*/
             if (block.timestamp - bidCreation[token][id] >= timetoBidExpiry[token][id]) {
-                bidAmount = auctions[token][id]._highestBid;
-                bidder = auctions[token][id]._highestBidder;
+                bidAmount = auctions[token][id].highestBid;
+                bidder = auctions[token][id].highestBidder;
 
-                auctions[token][id]._highestBidder = auctions[token][id]._seller;
-                auctions[token][id]._highestBid = 0;
+                auctions[token][id].highestBidder = auctions[token][id].seller;
+                auctions[token][id].highestBid = 0;
 
                 withdrawls[bidder] += bidAmount;
                 return true;
